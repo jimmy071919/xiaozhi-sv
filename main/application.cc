@@ -5,6 +5,7 @@
 #include "board.h"
 #include "cjson_utils.h"
 #include "display.h"
+#include "location_service.h"
 #include "markdown_text.h"
 #include "mcp_server.h"
 #include "mqtt_protocol.h"
@@ -390,6 +391,9 @@ void Application::ActivationTask() {
 
     // Check for new firmware version
     CheckNewVersion();
+
+    // Estimate the user's location for the agent (skipped if the user set one)
+    LocationService::GetInstance().DetectByIp();
 
     // Initialize the protocol
     InitializeProtocol();
