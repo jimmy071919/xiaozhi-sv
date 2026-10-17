@@ -161,7 +161,9 @@ bool WebsocketProtocol::OpenAudioChannel() {
     // Callbacks run on the transport's receive task, which on 4G modems is the
     // AT event task and cannot send, so the Pong is sent from the main task.
     std::weak_ptr<WebSocket> weak_websocket = websocket_;
-    websocket_->OnPing([weak_websocket](const char* data, size_t len) {
+    websocket_->OnPing([this, weak_websocket](const char* data, size_t len) {
+        // A Ping proves the server is alive, e.g. while an agent runs long tools
+        last_incoming_time_ = std::chrono::steady_clock::now();
         Application::GetInstance().Schedule([weak_websocket, payload = std::string(data, len)]() {
             if (auto websocket = weak_websocket.lock()) {
                 websocket->SendPong(payload.data(), payload.size());

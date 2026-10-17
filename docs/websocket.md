@@ -246,6 +246,19 @@ WebSocket text frames carry JSON. The most common `"type"` values and their sema
    - `{"session_id": "xxx", "type": "tts", "state": "start"}`: the server is about to stream TTS audio. The device transitions to the speaking state.
    - `{"session_id": "xxx", "type": "tts", "state": "stop"}`: the TTS segment is finished.
    - `{"session_id": "xxx", "type": "tts", "state": "sentence_start", "text": "..."}`: show the current sentence on the UI (for example, subtitle display).
+   - The device strips Markdown (bold, inline code, headings, list bullets, links, code fences) from `sentence_start` text before displaying it; the original text is still logged.
+   - With `CONFIG_CONVERT_DISPLAY_TEXT_TO_TRADITIONAL` (default on for the zh-TW language), the device also converts Simplified Chinese in `stt`, `tts`, `notify` subtitles, `alert`, and `agent` text to Traditional Chinese with Taiwan vocabulary for display. Servers should still prefer replying in Traditional Chinese, since TTS audio is not affected.
+
+   **Agent status (optional)**
+   - `{"session_id": "xxx", "type": "agent", "state": "thinking", "text": "..."}`
+   - Lets an agent backend (for example one that runs tools for a long time before replying) report progress. `text` is optional and truncated to 96 bytes.
+   - `state` values:
+     - `thinking`: the agent is working. While listening, the device shows `text` (or a localized "Thinking... Ns" counter) in the status bar with the `thinking` emotion.
+     - `tool`: the agent is running a tool; `text` is the tool name or a short description, shown as "Running: <text>".
+     - `done`: the agent finished without speaking; the device returns to the listening status.
+     - `error`: the agent failed; `text` is shown as a system message.
+   - Even without this message, the device shows a "Thinking..." counter from the `stt` result until `tts` `start` arrives.
+   - The device also treats a WebSocket Ping as incoming traffic for its 120-second channel timeout, so servers should keep sending Pings during long agent runs.
 
 5. **MCP**
    - The server sends IoT-related commands or receives tool-call results. The `payload` structure follows JSON-RPC 2.0.

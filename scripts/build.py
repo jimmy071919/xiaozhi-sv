@@ -20,7 +20,7 @@ os.chdir(Path(__file__).resolve().parent.parent)
 
 
 _DEFAULT_IDF_VERSION = (6, 0, 2)
-_DEFAULT_LANGUAGE = "en-US"
+_DEFAULT_LANGUAGE = "zh-TW"
 
 _LITE_WAKE_WORD_TARGETS = {"esp32c3", "esp32c5", "esp32c6"}
 _AFE_WAKE_WORD_TARGETS = {"esp32s3", "esp32p4", "esp32s31"}
@@ -1527,7 +1527,7 @@ def build_board(
         config_filename: config.json name (default: config.json)
         name_filter: build["name"] to compile
         create_zip: package merged-binary.bin under releases/ when true
-        language: optional locale such as zh-CN; defaults to en-US when omitted
+        language: optional locale such as zh-CN; defaults to zh-TW when omitted
         wake_word: optional model/alias; otherwise selected from language and board support
         build_options: optional semantic, board-validated option values
     """

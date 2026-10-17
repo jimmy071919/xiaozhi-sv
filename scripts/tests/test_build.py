@@ -1490,7 +1490,8 @@ class LanguageBuildTests(unittest.TestCase):
                         target, fragment, name, _ = configure.call_args.args
                         self.assertEqual(target, variant["target"])
                         self.assertEqual(name, variant["name"])
-                        expected = language_options["en-US" if language is None else language]
+                        effective_language = build._DEFAULT_LANGUAGE if language is None else language
+                        expected = language_options[effective_language]
                         self.assertEqual(
                             [item for item in fragment if item.startswith("CONFIG_LANGUAGE_")],
                             [expected],
@@ -1498,7 +1499,7 @@ class LanguageBuildTests(unittest.TestCase):
                         validate.assert_any_call([expected.split("=", 1)[0]], "--language")
                         models = [item for item in fragment if item.startswith("CONFIG_SR_WN_")]
                         if variant["wake_word_supported"]:
-                            chinese = language in {"zh-CN", "zh-TW"}
+                            chinese = effective_language in {"zh-CN", "zh-TW"}
                             if target in {"esp32c3", "esp32c5", "esp32c6"}:
                                 model = "WN9S_NIHAOXIAOZHI" if chinese else "WN9S_HIESP"
                             else:
@@ -1520,7 +1521,7 @@ class LanguageBuildTests(unittest.TestCase):
             self.mock_idf() as (_, configure, validate),
         ):
             for args, expected in (
-                ([], "CONFIG_LANGUAGE_EN_US=y"),
+                ([], "CONFIG_LANGUAGE_ZH_TW=y"),
                 (["--language", "ZH_cn"], "CONFIG_LANGUAGE_ZH_CN=y"),
             ):
                 with self.subTest(args=args):

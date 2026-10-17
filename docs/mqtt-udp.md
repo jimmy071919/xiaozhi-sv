@@ -180,6 +180,7 @@ Semantics match the WebSocket protocol. Supported types:
 - **STT** - speech recognition result.
 - **TTS** - TTS lifecycle (`start`, `stop`, `sentence_start`).
 - **LLM** - emotion update for the UI.
+- **Agent** (optional) - agent progress (`thinking`, `tool`, `done`, `error`) shown in the status bar; see the WebSocket document.
 - **MCP** - IoT control.
 - **System** - system control, e.g. `"command": "reboot"`.
 - **Alert** - show an alert on the UI; fields: `status`, `message`, `emotion`.

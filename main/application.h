@@ -156,6 +156,10 @@ private:
     bool play_popup_on_listening_ = false;  // Flag to play popup sound after state changes to listening
     bool pending_listening_start_ = false;  // Waiting for playback to drain before starting listening (auto mode)
     int clock_ticks_ = 0;
+    // Waiting for the server-side agent to reply (between STT and TTS start)
+    bool agent_busy_ = false;
+    int agent_busy_seconds_ = 0;
+    std::string agent_status_;
     TaskHandle_t activation_task_handle_ = nullptr;
 
 
@@ -173,6 +177,9 @@ private:
     void ContinueWakeWordInvoke(const std::string& wake_word);
     void StartListeningAudio();
     void ConfigureWakeWordForListening();
+    void SetAgentBusy(bool busy, const std::string& status = "");
+    void UpdateAgentBusyStatus();
+    void HandleAgentMessage(const std::string& state, const std::string& text);
     void ShowStartupWakeWordHint();
     void HideStartupWakeWordHint();
     void StartNotification(std::string audio_url, std::vector<NotifySubtitle> subtitles);

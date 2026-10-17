@@ -35,7 +35,7 @@ config CUSTOM_ASSETS_FILE
 
 choice
     prompt "Default Language"
-    default LANGUAGE_EN_US
+    default LANGUAGE_ZH_TW
     help
         Select device display language
 
@@ -120,6 +120,15 @@ choice
     config LANGUAGE_SR_RS
         bool "Serbian"
 endchoice
+
+config CONVERT_DISPLAY_TEXT_TO_TRADITIONAL
+    bool "Show server Chinese text in Traditional Chinese (Taiwan)"
+    default y
+    depends on LANGUAGE_ZH_TW
+    help
+        Convert Simplified Chinese in STT, TTS subtitles and agent status from the
+        server to Traditional Chinese with Taiwan vocabulary before displaying it.
+        Uses OpenCC tables (about 90 KB flash). Spoken audio is not affected.
 
 choice BOARD_TYPE
     prompt "Target Board"

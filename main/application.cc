@@ -5,12 +5,14 @@
 #include "board.h"
 #include "cjson_utils.h"
 #include "display.h"
+#include "markdown_text.h"
 #include "mcp_server.h"
 #include "mqtt_protocol.h"
 #include "settings.h"
 #include "system_info.h"
 #include "text_glyph_payload.h"
 #include "websocket_protocol.h"
+#include "zh_convert.h"
 
 #include <driver/gpio.h>
 #include <esp_log.h>
@@ -280,6 +282,10 @@ void Application::Run() {
             clock_ticks_++;
             auto display = Board::GetInstance().GetDisplay();
             display->UpdateStatusBar();
+            if (agent_busy_) {
+                agent_busy_seconds_++;
+                UpdateAgentBusyStatus();
+            }
 
             // Print debug info every 10 seconds
             if (clock_ticks_ % 10 == 0) {
@@ -620,8 +626,9 @@ void Application::InitializeProtocol() {
                         ESP_LOGW(TAG, "Ignoring invalid notify subtitle");
                         continue;
                     }
-                    subtitles.push_back({.start_ms = static_cast<uint32_t>(start_ms->valuedouble),
-                                         .text = text->valuestring});
+                    subtitles.push_back(
+                        {.start_ms = static_cast<uint32_t>(start_ms->valuedouble),
+                         .text = ConvertToTraditionalForDisplay(text->valuestring)});
                 }
             }
 
@@ -658,11 +665,17 @@ void Application::InitializeProtocol() {
                         glyphs.clear();
                     }
                     ESP_LOGI(TAG, "<< %s", text->valuestring);
-                    Schedule([display, message = std::string(text->valuestring),
-                              glyphs = std::move(glyphs), bpp]() {
-                        display->AddTextGlyphs(glyphs, bpp);
-                        display->SetChatMessage("assistant", message.c_str());
-                    });
+                    // Agent replies often carry Markdown; show plain text on screen
+                    auto message =
+                        ConvertToTraditionalForDisplay(StripMarkdownForDisplay(text->valuestring));
+                    if (message.empty()) {
+                        return;
+                    }
+                    Schedule(
+                        [display, message = std::move(message), glyphs = std::move(glyphs), bpp]() {
+                            display->AddTextGlyphs(glyphs, bpp);
+                            display->SetChatMessage("assistant", message.c_str());
+                        });
                 }
             }
         } else if (strcmp(type->valuestring, "stt") == 0) {
@@ -674,10 +687,15 @@ void Application::InitializeProtocol() {
                     glyphs.clear();
                 }
                 ESP_LOGI(TAG, ">> %s", text->valuestring);
-                Schedule([display, message = std::string(text->valuestring),
+                Schedule([this, display,
+                          message = ConvertToTraditionalForDisplay(text->valuestring),
                           glyphs = std::move(glyphs), bpp]() {
                     display->AddTextGlyphs(glyphs, bpp);
                     display->SetChatMessage("user", message.c_str());
+                    // The agent may take a while (tool calls) before TTS starts
+                    if (GetDeviceState() == kDeviceStateListening && !message.empty()) {
+                        SetAgentBusy(true);
+                    }
                 });
             }
         } else if (strcmp(type->valuestring, "llm") == 0) {
@@ -687,6 +705,20 @@ void Application::InitializeProtocol() {
                     display->SetEmotion(emotion_str.c_str());
                 });
             }
+        } else if (strcmp(type->valuestring, "agent") == 0) {
+            auto state = cJSON_GetObjectItem(root, "state");
+            auto text = cJSON_GetObjectItem(root, "text");
+            if (!cJSON_IsString(state)) {
+                ESP_LOGW(TAG, "Agent message requires state");
+                return;
+            }
+            std::string detail =
+                cJSON_IsString(text)
+                    ? TruncateUtf8(ConvertToTraditionalForDisplay(text->valuestring), 96)
+                    : "";
+            Schedule([this, state = std::string(state->valuestring), detail = std::move(detail)]() {
+                HandleAgentMessage(state, detail);
+            });
         } else if (strcmp(type->valuestring, "mcp") == 0) {
             auto payload = cJSON_GetObjectItem(root, "payload");
             if (cJSON_IsObject(payload)) {
@@ -708,8 +740,9 @@ void Application::InitializeProtocol() {
             auto message = cJSON_GetObjectItem(root, "message");
             auto emotion = cJSON_GetObjectItem(root, "emotion");
             if (cJSON_IsString(status) && cJSON_IsString(message) && cJSON_IsString(emotion)) {
-                Alert(status->valuestring, message->valuestring, emotion->valuestring,
-                      Lang::Sounds::OGG_VIBRATION);
+                Alert(ConvertToTraditionalForDisplay(status->valuestring).c_str(),
+                      ConvertToTraditionalForDisplay(message->valuestring).c_str(),
+                      emotion->valuestring, Lang::Sounds::OGG_VIBRATION);
             } else {
                 ESP_LOGW(TAG, "Alert command requires status, message and emotion");
             }
@@ -1008,6 +1041,9 @@ void Application::ContinueWakeWordInvoke(const std::string& wake_word) {
 void Application::HandleStateChangedEvent() {
     DeviceState new_state = state_machine_.GetState();
     clock_ticks_ = 0;
+    // Any state change (TTS start, idle, abort) ends the agent wait
+    agent_busy_ = false;
+    agent_status_.clear();
     // Any state change invalidates a pending deferred listening start;
     // the Listening case below re-arms it when needed.
     pending_listening_start_ = false;
@@ -1078,6 +1114,73 @@ void Application::HandleStateChangedEvent() {
         default:
             // Do nothing
             break;
+    }
+}
+
+void Application::SetAgentBusy(bool busy, const std::string& status) {
+    if (busy && GetDeviceState() != kDeviceStateListening) {
+        return;
+    }
+    auto display = Board::GetInstance().GetDisplay();
+    if (!busy) {
+        if (agent_busy_) {
+            agent_busy_ = false;
+            agent_status_.clear();
+            display->SetStatus(Lang::Strings::LISTENING);
+            display->SetEmotion("neutral");
+        }
+        return;
+    }
+    if (!agent_busy_) {
+        agent_busy_seconds_ = 0;
+        display->SetEmotion("thinking");
+    }
+    agent_busy_ = true;
+    agent_status_ = status;
+    UpdateAgentBusyStatus();
+}
+
+void Application::UpdateAgentBusyStatus() {
+    if (GetDeviceState() != kDeviceStateListening) {
+        agent_busy_ = false;
+        return;
+    }
+    auto display = Board::GetInstance().GetDisplay();
+    if (!agent_status_.empty()) {
+        display->SetStatus(agent_status_.c_str());
+    } else if (agent_busy_seconds_ < 3) {
+        display->SetStatus(Lang::Strings::THINKING);
+    } else {
+        char buffer[64];
+        snprintf(buffer, sizeof(buffer), Lang::Strings::THINKING_ELAPSED, agent_busy_seconds_);
+        display->SetStatus(buffer);
+    }
+}
+
+// Optional server extension: {"type":"agent","state":"thinking|tool|done|error","text":"..."}
+void Application::HandleAgentMessage(const std::string& state, const std::string& text) {
+    ESP_LOGI(TAG, "Agent %s: %s", state.c_str(), text.c_str());
+    auto display = Board::GetInstance().GetDisplay();
+    if (state == "thinking" || state == "tool") {
+        std::string status = text;
+        if (state == "tool" && !text.empty()) {
+            status = std::string(Lang::Strings::AGENT_RUNNING) + text;
+        }
+        if (GetDeviceState() == kDeviceStateListening) {
+            SetAgentBusy(true, status);
+        } else if (!status.empty()) {
+            display->ShowNotification(status);
+        }
+    } else if (state == "done") {
+        SetAgentBusy(false);
+    } else if (state == "error") {
+        SetAgentBusy(false);
+        if (!text.empty()) {
+            display->SetEmotion("sad");
+            display->SetChatMessage("system", text.c_str());
+        }
+    } else {
+        ESP_LOGW(TAG, "Unknown agent state: %s", state.c_str());
     }
 }
 
