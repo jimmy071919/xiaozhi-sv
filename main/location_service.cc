@@ -13,7 +13,6 @@ namespace {
 
 constexpr const char* kIpLookupUrl = "https://ipinfo.io/json";
 constexpr size_t kMaxFieldBytes = 64;
-constexpr size_t kMaxManualLocationBytes = 128;
 
 std::string GetStringField(const cJSON* root, const char* name) {
     auto item = cJSON_GetObjectItem(root, name);
@@ -26,18 +25,13 @@ std::string GetStringField(const cJSON* root, const char* name) {
 }  // namespace
 
 LocationService::LocationService() {
-    Settings settings("location");
-    manual_location_ = settings.GetString("manual");
+    // Location is always detected by IP now; drop a location saved by the
+    // removed self.location.set tool
+    Settings settings("location", true);
+    settings.EraseKey("manual");
 }
 
 void LocationService::DetectByIp() {
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        if (!manual_location_.empty()) {
-            return;
-        }
-    }
-
     auto network = Board::GetInstance().GetNetwork();
     auto http = network->CreateHttp(0);
     http->SetTimeout(5000);
@@ -71,24 +65,10 @@ void LocationService::DetectByIp() {
              ip_country_.c_str());
 }
 
-void LocationService::SetManualLocation(const std::string& location) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    manual_location_ = TruncateUtf8(location, kMaxManualLocationBytes);
-    Settings settings("location", true);
-    if (manual_location_.empty()) {
-        settings.EraseKey("manual");
-    } else {
-        settings.SetString("manual", manual_location_);
-    }
-}
-
 cJSON* LocationService::GetLocationJson() {
     std::lock_guard<std::mutex> lock(mutex_);
     auto json = cJSON_CreateObject();
-    if (!manual_location_.empty()) {
-        cJSON_AddStringToObject(json, "source", "user");
-        cJSON_AddStringToObject(json, "location", manual_location_.c_str());
-    } else if (!ip_city_.empty() || !ip_country_.empty()) {
+    if (!ip_city_.empty() || !ip_country_.empty()) {
         cJSON_AddStringToObject(json, "source", "ip");
         cJSON_AddStringToObject(json, "accuracy", "city-level estimate, may be wrong on 4G or VPN");
         cJSON_AddStringToObject(json, "city", ip_city_.c_str());

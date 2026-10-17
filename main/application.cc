@@ -392,7 +392,7 @@ void Application::ActivationTask() {
     // Check for new firmware version
     CheckNewVersion();
 
-    // Estimate the user's location for the agent (skipped if the user set one)
+    // Estimate the user's location for the agent from the public IP
     LocationService::GetInstance().DetectByIp();
 
     // Initialize the protocol

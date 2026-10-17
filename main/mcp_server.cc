@@ -64,21 +64,10 @@ void McpServer::AddCommonTools() {
             "Get the user's current location. Call this before answering questions that depend "
             "on where the user is, such as weather, nearby places, local time or directions.\n"
             "Return:\n"
-            "  `source` is `user` (told by the user, most reliable), `ip` (city-level estimate "
-            "from the network) or `unknown` (ask the user where they are).",
+            "  A city-level estimate from the device's public IP (`source` is `ip`), or `source` "
+            "`unknown` if the lookup failed.",
             PropertyList(), [](const PropertyList& properties) -> ReturnValue {
                 return LocationService::GetInstance().GetLocationJson();
-            });
-
-    AddTool("self.location.set",
-            "Remember the user's location when the user tells you where they are, e.g. "
-            "\"台北市信義區\". Pass an empty string to forget it and fall back to the network "
-            "estimate.",
-            PropertyList({Property("location", kPropertyTypeString)}),
-            [](const PropertyList& properties) -> ReturnValue {
-                LocationService::GetInstance().SetManualLocation(
-                    properties["location"].value<std::string>());
-                return true;
             });
 
     auto backlight = board.GetBacklight();
